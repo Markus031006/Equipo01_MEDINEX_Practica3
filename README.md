@@ -33,20 +33,37 @@ Documentos base: SRS v1.0 (Práctica 1) y DAS/SDD v1.0 con prototipo de Figma
 
 - React 19 + TypeScript + Vite
 - Tailwind CSS 4
-- Datos simulados en un almacén compartido (`src/utils/dataStore.ts`) con
-  persistencia en `localStorage` del navegador (clave `medinex_data_v1`).
-  El almacén arranca vacío: las acciones de cada rol se reflejan en los demás.
-- Sin backend real, sin autenticación real y sin despliegue en producción.
+- Backend real: servidor Payload CMS 3.x (carpeta `payload-local/`, SQLite en
+  la configuración local de prueba) con API REST en `/api` y autenticación
+  nativa con JWT. Las citas, los bloqueos y la bitácora persisten en el
+  servidor (colecciones `users`, `appointments`, `schedule-blocks` y
+  `audit-log`); los datos siguen siendo ficticios y de demostración.
+  Las citas arrancan vacías; las cuentas demo se siembran desde P-01.
+- Sin despliegue en producción: el prototipo se ejecuta en local o desde la
+  vista previa publicada de Figma Make.
 
 ## Ejecución local
 
+El prototipo necesita dos servidores: el backend Payload y el frontend.
+
 ```bash
+# 1. Servidor Payload (puerto 3000)
+cd payload-local
+cp .env.example .env
 npm install
+npm run dev
+
+# 2. Frontend (puerto 8443, en otra terminal, desde la raíz del repositorio)
+npm install
+cp .env.example .env   # VITE_PAYLOAD_API_URL=http://localhost:3000/api
 npm run dev
 ```
 
-La aplicación queda disponible en `http://localhost:5173` (puerto por defecto
-de Vite). Para una compilación de producción:
+La aplicación queda disponible en `http://localhost:8443` (el puerto lo fija
+`vite.config.ts`). Al entrar, pulsar «Inicializar / Sembrar datos demo» en
+P-01 para crear las 17 cuentas de demostración y luego iniciar sesión con
+una cuenta de la tabla siguiente. Para una compilación de producción del
+frontend:
 
 ```bash
 npm run build
@@ -66,7 +83,8 @@ https://scoop-future-50775312.figma.site/
 
 El selector de rol en el inicio de sesión es solo un atajo de demostración:
 rellena el usuario y sigue pidiendo la contraseña. También se puede crear una
-cuenta nueva desde el propio prototipo (queda guardada solo en el navegador).
+cuenta nueva desde el propio prototipo (queda guardada en la base de datos
+del servidor Payload).
 
 ## Pantallas implementadas (P-01 a P-09)
 
@@ -86,8 +104,10 @@ Funcionalidades simples verificables: búsqueda y filtrado de citas por folio,
 servicio, profesional o persona; validación de formularios (campos obligatorios
 con mensaje junto al campo); cambio de estado de la cita conforme a la máquina
 de estados (programada → confirmada → atendida o no presentada; cancelación
-desde programada o confirmada); conflicto de disponibilidad simulado en la
-franja del 27 oct 2026 10:30; advertencia de bloqueo con citas afectadas.
+desde programada o confirmada); detección del conflicto de disponibilidad en
+la franja del 27 oct 2026 10:30 (verificación en la interfaz y de
+solapamiento contra el servidor antes de insertar); advertencia de bloqueo
+con citas afectadas.
 
 ## Estructura del proyecto
 
@@ -100,10 +120,13 @@ franja del 27 oct 2026 10:30; advertencia de bloqueo con citas afectadas.
 │   ├── main.tsx           # Punto de entrada
 │   ├── vite-env.d.ts
 │   └── utils/
-│       ├── authStore.ts   # Sesión y cuentas de demostración (localStorage)
-│       └── dataStore.ts   # Almacén compartido: citas, bloqueos y bitácora
+│       ├── authStore.ts    # Sesión contra Payload (POST /users/login, JWT)
+│       ├── dataStore.ts    # Citas, bloqueos y bitácora contra la API REST
+│       └── payloadClient.ts # Cliente REST centralizado (fetch + JWT)
 ├── index.html
 ├── package.json
+├── payload-local/          # Servidor Payload CMS 3.x + SQLite (pruebas)
+├── payload-setup/          # Esquema de colecciones de Payload (referencia)
 ├── tsconfig.json
 ├── vite.config.ts
 └── README.md
@@ -117,6 +140,12 @@ franja del 27 oct 2026 10:30; advertencia de bloqueo con citas afectadas.
 - **Gemini** continuó el desarrollo por partes (P-02 y P-03; P-04 y P-05),
   y **ChatGPT/Claude** apoyaron la integración del estado compartido
   (`dataStore.ts`) y la redacción del documento de diseño.
+- **Migración a Payload CMS (noviembre de 2026):** Muse definió el
+  requerimiento y el prompt, Gemini generó el código de migración (cliente
+  REST, almacenes asíncronos y esquema de colecciones) y Muse lo implementó
+  y corrigió (tipos, textos exactos de la interfaz y calendario dinámico).
+  Verificado en vivo contra el servidor local con una prueba de 8 pasos
+  (19 de noviembre de 2026, resultado 8/8).
 - El equipo revisó y corrigió manualmente el resultado en cada iteración:
   restitución del pie de prototipo conceptual, limpieza de variables sin uso
   que impedían compilar, sustitución de datos de ejemplo fijos por un almacén
@@ -128,6 +157,9 @@ franja del 27 oct 2026 10:30; advertencia de bloqueo con citas afectadas.
 ## Límites declarados
 
 - Prototipo de demostración, no es el sistema completo ni está validado para
-  uso real. La concurrencia de reservas (RF-09) y las notificaciones (RF-10)
-  están simuladas; la autenticación es simulada y los datos viven solo en el
-  navegador que lo ejecuta. No usar con datos personales reales.
+  uso real. La concurrencia de reservas (RF-09) se verifica contra el
+  servidor antes de insertar; las notificaciones (RF-10) siguen simuladas y
+  la autenticación usa cuentas de demostración (JWT de Payload, sin
+  credenciales institucionales). Los datos viven en el servidor local
+  (SQLite) y no tienen respaldo automático. No usar con datos personales
+  reales.

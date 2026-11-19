@@ -2,7 +2,6 @@ import { useMemo, useState, useRef, useEffect, type ReactNode } from 'react'
 
 import {
   type Session,
-  initializePreloadedUsers,
   registerUser,
   loginUser,
   getSession,
@@ -13,15 +12,16 @@ import {
 
 import {
   useStore,
-  resetData,
+  refreshStoreData,
   createAppointment,
   changeStatus,
   cancelAppointment,
   rescheduleAppointment,
   createBlock,
-  getSlots,
+  getSlotsForRange,
   professionalNames,
   formatDateLabel,
+  seedDemoDataInPayload,
   type Appointment,
   type SlotInfo,
   type AppointmentStatus,
@@ -142,69 +142,72 @@ function ConceptFooter() {
 function Login({
   onLogin,
   onGoToRegister,
-  onReset,
   successMessage,
 }: {
-  onLogin: (session: Session) => void;
-  onGoToRegister: () => void;
-  onReset: () => void;
-  successMessage?: string | null;
+  onLogin: (session: Session) => void
+  onGoToRegister: () => void
+  successMessage?: string | null
 }) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [remember, setRemember] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState(false);
-  const [selectedDemoRole, setSelectedDemoRole] = useState<Role>('Paciente');
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [remember, setRemember] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [seeding, setSeeding] = useState(false)
+  const [seedInfo, setSeedInfo] = useState<string | null>(null)
+  const [selectedDemoRole, setSelectedDemoRole] = useState<Role>('Paciente')
 
   useEffect(() => {
-    const remembered = getRememberedUser();
+    const remembered = getRememberedUser()
     if (remembered) {
-      setUsername(remembered);
-      setRemember(true);
+      setUsername(remembered)
+      setRemember(true)
     }
-  }, []);
+  }, [])
 
   const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(false);
-    await initializePreloadedUsers();
+    e.preventDefault()
+    setError(false)
+    setLoading(true)
 
-    const session = await loginUser(username.trim(), password);
+    const session = await loginUser(username.trim(), password)
+    setLoading(false)
+
     if (!session) {
-      setError(true);
-      return;
+      setError(true)
+      return
     }
 
     if (remember) {
-      setRememberedUser(username.trim());
+      setRememberedUser(username.trim())
     } else {
-      setRememberedUser(null);
+      setRememberedUser(null)
     }
 
-    onLogin(session);
-  };
+    onLogin(session)
+  }
 
   const handleDemoRoleSelect = (role: Role) => {
-    setSelectedDemoRole(role);
-    setError(false);
+    setSelectedDemoRole(role)
+    setError(false)
     const demoAccounts: Record<Role, string> = {
       Paciente: 'markus',
       Recepción: 'luis.perez',
       Profesional: 'laura.mendoza',
       Coordinación: 'elena.vargas',
       TI: 'raul.campos',
-    };
-    setUsername(demoAccounts[role]);
-  };
-
-  const handleReset = () => {
-    if (window.confirm('¿Deseas restablecer todos los datos de prueba? Las citas, bloqueos y bitácora volverán a cero.')) {
-      resetData();
-      onReset();
-      alert('Datos de prueba restablecidos correctamente.');
     }
-  };
+    setUsername(demoAccounts[role])
+  }
+
+  const handleSeedDemo = async () => {
+    setSeeding(true)
+    setSeedInfo(null)
+    const msg = await seedDemoDataInPayload()
+    setSeedInfo(msg)
+    setSeeding(false)
+  }
 
   return (
     <main className="login-page">
@@ -235,6 +238,12 @@ function Login({
             </Alert>
           )}
 
+          {seedInfo && (
+            <Alert kind="success">
+              <span>{seedInfo}</span>
+            </Alert>
+          )}
+
           {error && (
             <Alert kind="error">
               <span>Credenciales no válidas. Verifica tus datos e inténtalo de nuevo.</span>
@@ -245,7 +254,7 @@ function Login({
             <input
               type="text"
               value={username}
-              onChange={(e) => { setUsername(e.target.value); setError(false); }}
+              onChange={(e) => { setUsername(e.target.value); setError(false) }}
               placeholder="Ej. markus o tu usuario"
               autoComplete="username"
               required
@@ -256,7 +265,7 @@ function Login({
             <div className="password-field">
               <input
                 value={password}
-                onChange={(e) => { setPassword(e.target.value); setError(false); }}
+                onChange={(e) => { setPassword(e.target.value); setError(false) }}
                 type={showPassword ? 'text' : 'password'}
                 placeholder="Ingresa tu contraseña"
                 autoComplete="current-password"
@@ -283,7 +292,9 @@ function Login({
             </label>
           </div>
 
-          <Button type="submit">Ingresar</Button>
+          <Button type="submit" disabled={loading}>
+            {loading ? 'Verificando en servidor...' : 'Ingresar'}
+          </Button>
 
           <div className="form-toggle-link">
             <span>¿No tienes una cuenta? </span>
@@ -309,8 +320,8 @@ function Login({
           </div>
 
           <div style={{ marginTop: '1rem', textAlign: 'center' }}>
-            <Button variant="secondary" onClick={handleReset}>
-              Restablecer datos de prueba
+            <Button variant="secondary" disabled={seeding} onClick={handleSeedDemo}>
+              {seeding ? 'Sembrando datos en Payload...' : 'Inicializar / Sembrar datos demo'}
             </Button>
           </div>
 
@@ -319,7 +330,7 @@ function Login({
       </section>
       <ConceptFooter/>
     </main>
-  );
+  )
 }
 
 function RegisterForm({
@@ -337,11 +348,12 @@ function RegisterForm({
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState(false)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrors({})
-    await initializePreloadedUsers()
+    setSubmitting(true)
 
     const res = await registerUser({
       name,
@@ -350,6 +362,8 @@ function RegisterForm({
       password,
       confirmPassword,
     })
+
+    setSubmitting(false)
 
     if (!res.ok && res.errors) {
       setErrors(res.errors)
@@ -382,7 +396,7 @@ function RegisterForm({
           <p className="muted">Registro para personas usuarias / estudiantes.</p>
 
           <Alert kind="warning">
-            <span>Prototipo conceptual: usa datos ficticios. Las cuentas se guardan solo en este navegador.</span>
+            <span>Prototipo conceptual: usa datos ficticios. Las cuentas se crean en el servidor Payload CMS.</span>
           </Alert>
 
           {errors.form && (
@@ -395,7 +409,7 @@ function RegisterForm({
             <input
               type="text"
               value={name}
-              onChange={e => { setName(e.target.value); setErrors(prev => ({ ...prev, name: '', form: '' })) }}
+              onChange={(e) => { setName(e.target.value); setErrors((prev) => ({ ...prev, name: '', form: '' })) }}
               placeholder="Ej. Pedro Morales"
               required
             />
@@ -405,7 +419,7 @@ function RegisterForm({
             <input
               type="text"
               value={username}
-              onChange={e => { setUsername(e.target.value); setErrors(prev => ({ ...prev, username: '', form: '' })) }}
+              onChange={(e) => { setUsername(e.target.value); setErrors((prev) => ({ ...prev, username: '', form: '' })) }}
               placeholder="Ej. pedro.morales"
               required
             />
@@ -415,7 +429,7 @@ function RegisterForm({
             <input
               type="text"
               value={id}
-              onChange={e => { setId(e.target.value); setErrors(prev => ({ ...prev, id: '', form: '' })) }}
+              onChange={(e) => { setId(e.target.value); setErrors((prev) => ({ ...prev, id: '', form: '' })) }}
               placeholder="Ej. 202400105"
               inputMode="numeric"
               maxLength={9}
@@ -428,7 +442,7 @@ function RegisterForm({
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
-                onChange={e => { setPassword(e.target.value); setErrors(prev => ({ ...prev, password: '', form: '' })) }}
+                onChange={(e) => { setPassword(e.target.value); setErrors((prev) => ({ ...prev, password: '', form: '' })) }}
                 placeholder="Mínimo 8 caracteres"
                 autoComplete="new-password"
                 required
@@ -436,7 +450,7 @@ function RegisterForm({
               <button
                 type="button"
                 aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                onClick={() => setShowPassword(v => !v)}
+                onClick={() => setShowPassword((v) => !v)}
               >
                 <Icon name="eye"/>
               </button>
@@ -448,7 +462,7 @@ function RegisterForm({
               <input
                 type={showConfirmPassword ? 'text' : 'password'}
                 value={confirmPassword}
-                onChange={e => { setConfirmPassword(e.target.value); setErrors(prev => ({ ...prev, confirmPassword: '', form: '' })) }}
+                onChange={(e) => { setConfirmPassword(e.target.value); setErrors((prev) => ({ ...prev, confirmPassword: '', form: '' })) }}
                 placeholder="Repite tu contraseña"
                 autoComplete="new-password"
                 required
@@ -456,14 +470,16 @@ function RegisterForm({
               <button
                 type="button"
                 aria-label={showConfirmPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                onClick={() => setShowConfirmPassword(v => !v)}
+                onClick={() => setShowConfirmPassword((v) => !v)}
               >
                 <Icon name="eye"/>
               </button>
             </div>
           </Field>
 
-          <Button type="submit">Registrarme</Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? 'Registrando...' : 'Registrarme'}
+          </Button>
 
           <div className="form-toggle-link">
             <span>¿Ya tienes una cuenta? </span>
@@ -502,7 +518,7 @@ function Shell({
         </div>
         <div className="side-label">MENÚ PRINCIPAL</div>
         <nav>
-          {roleMenu[role].map(item => (
+          {roleMenu[role].map((item) => (
             <button
               key={item.id}
               className={screen === item.id ? 'active' : ''}
@@ -519,7 +535,7 @@ function Shell({
           <div className="mobile-menu"><Icon name="menu"/></div>
           <div className="topbar-spacer"/>
           <div className="user-avatar">
-            {session.name.split(' ').filter((_, i) => i < 2).map(n => n[0]).join('')}
+            {session.name.split(' ').filter((_, i) => i < 2).map((n) => n[0]).join('')}
           </div>
           <div className="user-meta">
             <strong>{session.name}</strong>
@@ -547,77 +563,79 @@ function Reserve({
   takenSlotIds,
   onMarkSlotTaken,
 }: {
-  session: Session;
-  patient: { name: string; id: string };
-  setScreen: (s: Screen) => void;
-  takenSlotIds: string[];
-  onMarkSlotTaken: (id: string) => void;
+  session: Session
+  patient: { name: string; id: string }
+  setScreen: (s: Screen) => void
+  takenSlotIds: string[]
+  onMarkSlotTaken: (id: string) => void
 }) {
-  const store = useStore();
-  const [service, setService] = useState('Consulta general');
-  const [professional, setProfessional] = useState('Dra. Laura Mendoza');
-  const [dateFrom, setDateFrom] = useState('2026-10-26');
-  const [dateTo, setDateTo] = useState('2026-10-30');
-  const [hasSearched, setHasSearched] = useState(true);
-  const [selectedSlot, setSelectedSlot] = useState<SlotInfo | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [createdAppointmentId, setCreatedAppointmentId] = useState<string | null>(null);
-  const [notificationWarning, setNotificationWarning] = useState(false);
+  const store = useStore()
+  const [service, setService] = useState('Consulta general')
+  const [professional, setProfessional] = useState('Dra. Laura Mendoza')
+  const [dateFrom, setDateFrom] = useState('2026-10-26')
+  const [dateTo, setDateTo] = useState('2026-10-30')
+  const [selectedSlot, setSelectedSlot] = useState<SlotInfo | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [createdAppointmentId, setCreatedAppointmentId] = useState<string | null>(null)
+  const [notificationWarning, setNotificationWarning] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
-  const alertRef = useRef<HTMLDivElement | null>(null);
+  const alertRef = useRef<HTMLDivElement | null>(null)
 
   const slots = useMemo(() => {
-    return getSlots(service);
-  }, [service, store.appointments, store.blocks]);
-
-  useEffect(() => {
-    if (!selectedSlot && slots.length > 0) {
-      const firstAvailable = slots.find((s) => s.isAvailable);
-      if (firstAvailable) setSelectedSlot(firstAvailable);
-    }
-  }, [slots, selectedSlot]);
+    return getSlotsForRange(service, dateFrom, dateTo, store.appointments, store.blocks)
+  }, [service, dateFrom, dateTo, store.appointments, store.blocks])
 
   useEffect(() => {
     if (errorMsg && alertRef.current) {
-      alertRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      alertRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
-  }, [errorMsg]);
+  }, [errorMsg])
 
   const handleServiceChange = (s: string) => {
-    setService(s);
-    setProfessional(professionalNames[s] || '');
-    setSelectedSlot(null);
-    setErrorMsg(null);
-  };
+    setService(s)
+    setProfessional(professionalNames[s] || '')
+    setSelectedSlot(null)
+    setErrorMsg(null)
+  }
 
   const handleSelectSlot = (s: SlotInfo) => {
     if (s.dateVal === '2026-10-27' && s.start === '10:30' && service === 'Consulta general') {
-      onMarkSlotTaken(`${s.service}:${s.id}`);
-      setErrorMsg('Conflicto de disponibilidad: la franja ya fue tomada por otra solicitud. Elige otra franja.');
-      setSelectedSlot(null);
-      return;
+      onMarkSlotTaken(`${s.service}:${s.id}`)
+      setErrorMsg('Conflicto de disponibilidad: la franja ya fue tomada por otra solicitud. Elige otra franja.')
+      setSelectedSlot(null)
+      return
     }
 
+    if (!s.isAvailable) {
+      setErrorMsg('Conflicto de disponibilidad: la franja ya fue tomada por otra solicitud. Elige otra franja.')
+      setSelectedSlot(null)
+      return
+    }
+
+    // Validar traslape real del paciente con cualquier cita activa suya
     const hasOverlap = store.appointments.some((a) => {
-      if (a.patientId !== patient.id) return false;
-      if (a.status === 'cancelada') return false;
-      return a.date === s.dateVal && a.start === s.start;
-    });
+      if (a.patientId !== patient.id) return false
+      if (a.status === 'cancelada') return false
+      return a.date === s.dateVal && a.start === s.start
+    })
 
     if (hasOverlap) {
-      setErrorMsg('Ya tienes una cita activa que se traslapa con esta franja.');
-      setSelectedSlot(null);
-      return;
+      setErrorMsg('Ya tienes una cita activa que se traslapa con esta franja.')
+      setSelectedSlot(null)
+      return
     }
 
-    setErrorMsg(null);
-    setSelectedSlot(s);
-  };
+    setErrorMsg(null)
+    setSelectedSlot(s)
+  }
 
-  const handleConfirmBooking = () => {
-    if (!selectedSlot) return;
+  const handleConfirmBooking = async () => {
+    if (!selectedSlot) return
+    setSubmitting(true)
+    setErrorMsg(null)
 
-    const res = createAppointment(
+    const res = await createAppointment(
       {
         patientName: patient.name,
         patientId: patient.id,
@@ -630,15 +648,17 @@ function Reserve({
         room: selectedSlot.room,
       },
       { name: session.name, role: session.role }
-    );
+    )
+
+    setSubmitting(false)
 
     if (res.ok) {
-      setCreatedAppointmentId(res.appointment.id);
+      setCreatedAppointmentId(res.appointment.id)
     } else {
-      setErrorMsg(res.error);
-      setSelectedSlot(null);
+      setErrorMsg(res.error)
+      setSelectedSlot(null)
     }
-  };
+  }
 
   if (createdAppointmentId && selectedSlot) {
     return (
@@ -678,9 +698,9 @@ function Reserve({
           <Button
             variant="secondary"
             onClick={() => {
-              setCreatedAppointmentId(null);
-              setSelectedSlot(null);
-              setErrorMsg(null);
+              setCreatedAppointmentId(null)
+              setSelectedSlot(null)
+              setErrorMsg(null)
             }}
           >
             Reservar otra
@@ -690,12 +710,8 @@ function Reserve({
           </Button>
         </div>
       </div>
-    );
+    )
   }
-
-  const filteredSlots = hasSearched
-    ? slots.filter((s) => s.dateVal >= dateFrom && s.dateVal <= dateTo)
-    : [];
 
   return (
     <>
@@ -718,14 +734,32 @@ function Reserve({
             </select>
           </Field>
           <Field label="Fecha desde">
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => {
+                setDateFrom(e.target.value)
+                if (e.target.value > dateTo) setDateTo(e.target.value)
+                setSelectedSlot(null)
+              }}
+            />
           </Field>
           <Field label="Fecha hasta">
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom}
+              onChange={(e) => {
+                setDateTo(e.target.value)
+                setSelectedSlot(null)
+              }}
+            />
           </Field>
         </div>
         <div className="filter-actions">
-          <Button icon="search" onClick={() => setHasSearched(true)}>Buscar franjas</Button>
+          <Button icon="search" onClick={() => refreshStoreData()}>
+            Actualizar disponibilidad
+          </Button>
         </div>
       </section>
 
@@ -737,17 +771,21 @@ function Reserve({
             {errorMsg && <Alert kind="error"><span>{errorMsg}</span></Alert>}
           </div>
 
-          {filteredSlots.length === 0 ? (
+          {store.loading ? (
+            <div className="empty-slots-state">
+              <p className="muted">Consultando disponibilidad en Payload CMS...</p>
+            </div>
+          ) : slots.length === 0 ? (
             <div className="empty-slots-state">
               <Icon name="calendar" size={40} />
               <h3>No hay franjas disponibles para los filtros seleccionados.</h3>
-              <p className="muted">Amplía el rango de fechas o cambia de profesional.</p>
+              <p className="muted">Selecciona un rango que incluya días hábiles (lunes a viernes).</p>
             </div>
           ) : (
             <div className="slot-cards-container">
-              {filteredSlots.map((s) => {
-                const isTaken = !s.isAvailable || takenSlotIds.includes(`${s.service}:${s.id}`);
-                const isSelected = selectedSlot?.id === s.id && !isTaken;
+              {slots.map((s) => {
+                const isTaken = !s.isAvailable || takenSlotIds.includes(`${s.service}:${s.id}`)
+                const isSelected = selectedSlot?.id === s.id && !isTaken
 
                 return (
                   <div
@@ -766,9 +804,12 @@ function Reserve({
                     </div>
                     <div className="slot-card-action">
                       {isTaken ? (
-                        <span className="unavailable-badge">
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleSelectSlot(s)}
+                        >
                           {s.reasonDisabled || 'No disponible'}
-                        </span>
+                        </Button>
                       ) : (
                         <Button
                           variant={isSelected ? 'primary' : 'secondary'}
@@ -779,7 +820,7 @@ function Reserve({
                       )}
                     </div>
                   </div>
-                );
+                )
               })}
             </div>
           )}
@@ -803,7 +844,9 @@ function Reserve({
                   <div><dt>Matrícula</dt><dd>{patient.id}</dd></div>
                 </dl>
                 <p className="admin-data-notice">Solo se registran datos administrativos mínimos.</p>
-                <Button onClick={handleConfirmBooking}>Confirmar reserva</Button>
+                <Button disabled={submitting} onClick={handleConfirmBooking}>
+                  {submitting ? 'Guardando...' : 'Confirmar reserva'}
+                </Button>
               </>
             ) : (
               <div className="no-slot-selected">
@@ -814,7 +857,7 @@ function Reserve({
         </aside>
       </div>
     </>
-  );
+  )
 }
 
 function Register({
@@ -823,91 +866,88 @@ function Register({
   takenSlotIds,
   onMarkSlotTaken,
 }: {
-  session: Session;
-  setScreen: (s: Screen) => void;
-  takenSlotIds: string[];
-  onMarkSlotTaken: (id: string) => void;
+  session: Session
+  setScreen: (s: Screen) => void
+  takenSlotIds: string[]
+  onMarkSlotTaken: (id: string) => void
 }) {
-  const store = useStore();
-  const [fullName, setFullName] = useState('');
-  const [employeeId, setEmployeeId] = useState('');
-  const [userType, setUserType] = useState('Estudiante');
-  const [contact, setContact] = useState('');
-  const [originChannel, setOriginChannel] = useState<BookingChannel>('Ventanilla');
-  const [service, setService] = useState('Consulta general');
-  const [professional, setProfessional] = useState('Dra. Laura Mendoza');
+  const store = useStore()
+  const [fullName, setFullName] = useState('')
+  const [employeeId, setEmployeeId] = useState('')
+  const [userType, setUserType] = useState('Estudiante')
+  const [contact, setContact] = useState('')
+  const [originChannel, setOriginChannel] = useState<BookingChannel>('Ventanilla')
+  const [service, setService] = useState('Consulta general')
+  const [professional, setProfessional] = useState('Dra. Laura Mendoza')
+  const [dateFrom, setDateFrom] = useState('2026-10-26')
+  const [dateTo, setDateTo] = useState('2026-10-30')
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [selectedSlot, setSelectedSlot] = useState<SlotInfo | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [createdAppointmentId, setCreatedAppointmentId] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [selectedSlot, setSelectedSlot] = useState<SlotInfo | null>(null)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [createdAppointmentId, setCreatedAppointmentId] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
-  const alertRef = useRef<HTMLDivElement | null>(null);
+  const alertRef = useRef<HTMLDivElement | null>(null)
 
   const slots = useMemo(() => {
-    return getSlots(service);
-  }, [service, store.appointments, store.blocks]);
+    return getSlotsForRange(service, dateFrom, dateTo, store.appointments, store.blocks)
+  }, [service, dateFrom, dateTo, store.appointments, store.blocks])
 
   useEffect(() => {
     if (errorMsg && alertRef.current) {
-      alertRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      alertRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
-  }, [errorMsg]);
+  }, [errorMsg])
 
   const validate = () => {
-    const errs: Record<string, string> = {};
-    if (!fullName.trim()) errs.fullName = 'Este campo es obligatorio';
-    if (!employeeId.trim()) errs.employeeId = 'Este campo es obligatorio';
-    if (!contact.trim()) errs.contact = 'Este campo es obligatorio';
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
-  };
+    const errs: Record<string, string> = {}
+    if (!fullName.trim()) errs.fullName = 'Este campo es obligatorio'
+    if (!employeeId.trim()) errs.employeeId = 'Este campo es obligatorio'
+    if (!contact.trim()) errs.contact = 'Este campo es obligatorio'
+    setErrors(errs)
+    return Object.keys(errs).length === 0
+  }
 
   const handleSelectSlot = (s: SlotInfo) => {
     if (s.dateVal === '2026-10-27' && s.start === '10:30' && service === 'Consulta general') {
-      onMarkSlotTaken(`${s.service}:${s.id}`);
-      setErrorMsg('Conflicto de disponibilidad: la franja ya fue tomada por otra solicitud. Elige otra franja.');
-      setSelectedSlot(null);
-      return;
+      onMarkSlotTaken(`${s.service}:${s.id}`)
+      setErrorMsg('Conflicto de disponibilidad: la franja ya fue tomada por otra solicitud. Elige otra franja.')
+      setSelectedSlot(null)
+      return
+    }
+
+    if (!s.isAvailable) {
+      setErrorMsg('Conflicto de disponibilidad: la franja ya fue tomada por otra solicitud. Elige otra franja.')
+      setSelectedSlot(null)
+      return
     }
 
     const hasOverlap = store.appointments.some((a) => {
-      if (a.patientId !== employeeId) return false;
-      if (a.status === 'cancelada') return false;
-      return a.date === s.dateVal && a.start === s.start;
-    });
+      if (a.patientId !== employeeId.trim()) return false
+      if (a.status === 'cancelada') return false
+      return a.date === s.dateVal && a.start === s.start
+    })
 
     if (hasOverlap) {
-      setErrorMsg('La persona usuaria ya tiene una cita activa que se traslapa con esta franja.');
-      setSelectedSlot(null);
-      return;
+      setErrorMsg('La persona usuaria ya tiene una cita activa que se traslapa con esta franja.')
+      setSelectedSlot(null)
+      return
     }
 
-    setErrorMsg(null);
-    setSelectedSlot(s);
-  };
+    setErrorMsg(null)
+    setSelectedSlot(s)
+  }
 
-  const handleRegister = () => {
-    if (!validate()) return;
+  const handleRegister = async () => {
+    if (!validate()) return
     if (!selectedSlot || !selectedSlot.isAvailable) {
-      setErrorMsg('Selecciona una franja disponible.');
-      return;
+      setErrorMsg('Selecciona una franja disponible.')
+      return
     }
 
-    const duplicate = store.appointments.some(
-      (a) =>
-        a.patientId === employeeId.trim() &&
-        a.status !== 'cancelada' &&
-        a.date === selectedSlot.dateVal &&
-        a.start === selectedSlot.start
-    );
-    if (duplicate) {
-      setErrorMsg('La persona usuaria ya tiene una cita activa que se traslapa con esta franja.');
-      setSelectedSlot(null);
-      return;
-    }
-
-    const res = createAppointment(
+    setSubmitting(true)
+    const res = await createAppointment(
       {
         patientName: fullName,
         patientId: employeeId.trim(),
@@ -922,15 +962,16 @@ function Register({
         room: selectedSlot.room,
       },
       { name: session.name, role: session.role }
-    );
+    )
+    setSubmitting(false)
 
     if (res.ok) {
-      setCreatedAppointmentId(res.appointment.id);
+      setCreatedAppointmentId(res.appointment.id)
     } else {
-      setErrorMsg(res.error);
-      setSelectedSlot(null);
+      setErrorMsg(res.error)
+      setSelectedSlot(null)
     }
-  };
+  }
 
   if (createdAppointmentId) {
     return (
@@ -956,7 +997,7 @@ function Register({
           </div>
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -971,14 +1012,14 @@ function Register({
             <Field label="Nombre completo" error={errors.fullName}>
               <input
                 value={fullName}
-                onChange={(e) => { setFullName(e.target.value); setErrors((prev) => ({ ...prev, fullName: '' })); }}
+                onChange={(e) => { setFullName(e.target.value); setErrors((prev) => ({ ...prev, fullName: '' })) }}
                 placeholder="Ej. Marco Díaz Lara"
               />
             </Field>
             <Field label="Matrícula o número de empleado" error={errors.employeeId}>
               <input
                 value={employeeId}
-                onChange={(e) => { setEmployeeId(e.target.value); setErrors((prev) => ({ ...prev, employeeId: '' })); }}
+                onChange={(e) => { setEmployeeId(e.target.value); setErrors((prev) => ({ ...prev, employeeId: '' })) }}
                 placeholder="Ej. 20264567"
               />
             </Field>
@@ -991,7 +1032,7 @@ function Register({
             <Field label="Teléfono o correo de contacto" error={errors.contact}>
               <input
                 value={contact}
-                onChange={(e) => { setContact(e.target.value); setErrors((prev) => ({ ...prev, contact: '' })); }}
+                onChange={(e) => { setContact(e.target.value); setErrors((prev) => ({ ...prev, contact: '' })) }}
                 placeholder="Ej. 55 1234 5678 o correo"
               />
             </Field>
@@ -1006,16 +1047,16 @@ function Register({
           </div>
 
           <div className="section-divider" />
-          <h2>Filtro de servicio</h2>
+          <h2>Filtro de servicio y fechas</h2>
           <div className="form-grid">
             <Field label="Servicio">
               <select
                 value={service}
                 onChange={(e) => {
-                  const newS = e.target.value;
-                  setService(newS);
-                  setProfessional(professionalNames[newS] || '');
-                  setSelectedSlot(null);
+                  const newS = e.target.value
+                  setService(newS)
+                  setProfessional(professionalNames[newS] || '')
+                  setSelectedSlot(null)
                 }}
               >
                 <option>Consulta general</option>
@@ -1028,6 +1069,28 @@ function Register({
               <select value={professional} onChange={(e) => setProfessional(e.target.value)}>
                 <option>{professionalNames[service]}</option>
               </select>
+            </Field>
+            <Field label="Fecha desde">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => {
+                  setDateFrom(e.target.value)
+                  if (e.target.value > dateTo) setDateTo(e.target.value)
+                  setSelectedSlot(null)
+                }}
+              />
+            </Field>
+            <Field label="Fecha hasta">
+              <input
+                type="date"
+                value={dateTo}
+                min={dateFrom}
+                onChange={(e) => {
+                  setDateTo(e.target.value)
+                  setSelectedSlot(null)
+                }}
+              />
             </Field>
           </div>
         </section>
@@ -1042,8 +1105,8 @@ function Register({
 
           <div className="slot-cards-container">
             {slots.map((s) => {
-              const isTaken = !s.isAvailable || takenSlotIds.includes(`${s.service}:${s.id}`);
-              const isSelected = selectedSlot?.id === s.id && !isTaken;
+              const isTaken = !s.isAvailable || takenSlotIds.includes(`${s.service}:${s.id}`)
+              const isSelected = selectedSlot?.id === s.id && !isTaken
 
               return (
                 <div
@@ -1059,7 +1122,9 @@ function Register({
                   </div>
                   <div className="slot-card-action">
                     {isTaken ? (
-                      <span className="unavailable-badge">{s.reasonDisabled || 'No disponible'}</span>
+                      <Button variant="secondary" onClick={() => handleSelectSlot(s)}>
+                        {s.reasonDisabled || 'No disponible'}
+                      </Button>
                     ) : (
                       <Button
                         variant={isSelected ? 'primary' : 'secondary'}
@@ -1070,82 +1135,113 @@ function Register({
                     )}
                   </div>
                 </div>
-              );
+              )
             })}
           </div>
 
           <div className="p03-confirm-box">
-            <Button onClick={handleRegister}>Registrar cita</Button>
+            <Button disabled={submitting} onClick={handleRegister}>
+              {submitting ? 'Registrando...' : 'Registrar cita'}
+            </Button>
           </div>
         </section>
       </div>
     </>
-  );
+  )
+}
+
+function getMondayOfWeek(baseDateStr: string, weekOffset: number): Date {
+  const [y, m, d] = baseDateStr.split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  const day = date.getUTCDay()
+  const diffToMonday = day === 0 ? -6 : 1 - day
+  date.setUTCDate(date.getUTCDate() + diffToMonday + weekOffset * 7)
+  return date
 }
 
 function Agenda({ session, setScreen }: { session: Session; setScreen: (s: Screen) => void }) {
-  const store = useStore();
-  const [viewMode, setViewMode] = useState<'week' | 'list'>('week');
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [selectedApptId, setSelectedApptId] = useState<string | null>(null);
-  const [transitionError, setTransitionError] = useState<string | null>(null);
+  const store = useStore()
+  const [viewMode, setViewMode] = useState<'week' | 'list'>('week')
+  const [weekOffset, setWeekOffset] = useState(0)
+  const [selectedApptId, setSelectedApptId] = useState<string | null>(null)
+  const [transitionError, setTransitionError] = useState<string | null>(null)
 
-  const profName = session.name;
+  const profName = session.name
+
+  // Calcular dinámicamente las 5 columnas (Lun-Vie) según weekOffset partiendo de la semana base 2026-10-26
+  const dayColumns = useMemo(() => {
+    const monday = getMondayOfWeek('2026-10-26', weekOffset)
+    const dayNames = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE']
+    return dayNames.map((dayName, idx) => {
+      const current = new Date(monday)
+      current.setUTCDate(monday.getUTCDate() + idx)
+      const yyyy = current.getUTCFullYear()
+      const mm = String(current.getUTCMonth() + 1).padStart(2, '0')
+      const dd = String(current.getUTCDate()).padStart(2, '0')
+      const val = `${yyyy}-${mm}-${dd}`
+      return {
+        day: dayName,
+        date: formatDateLabel(val),
+        val,
+        col: idx + 1,
+      }
+    })
+  }, [weekOffset])
+
+  const weekStartStr = dayColumns[0].val
+  const weekEndStr = dayColumns[4].val
+  const weekRangeLabel = `${dayColumns[0].date.replace(' 2026', '')} – ${dayColumns[4].date}`
 
   const profAppts = useMemo(() => {
     return store.appointments
-      .filter((a) => a.professional === profName)
-      .sort((a, b) => `${a.date}T${a.start}`.localeCompare(`${b.date}T${b.start}`));
-  }, [store.appointments, profName]);
+      .filter((a) => a.professional === profName && a.date >= weekStartStr && a.date <= weekEndStr)
+      .sort((a, b) => `${a.date}T${a.start}`.localeCompare(`${b.date}T${b.start}`))
+  }, [store.appointments, profName, weekStartStr, weekEndStr])
 
   const profBlocks = useMemo(() => {
-    return store.blocks.filter((b) => b.professional === profName);
-  }, [store.blocks, profName]);
+    return store.blocks.filter(
+      (b) => b.professional === profName && b.endDate >= weekStartStr && b.startDate <= weekEndStr
+    )
+  }, [store.blocks, profName, weekStartStr, weekEndStr])
 
   const selectedAppt = useMemo(() => {
-    return profAppts.find((a) => a.id === selectedApptId) || profAppts[0] || null;
-  }, [profAppts, selectedApptId]);
-
-  const dayColumns = [
-    { day: 'LUN', date: '26 oct 2026', val: '2026-10-26', col: 1 },
-    { day: 'MAR', date: '27 oct 2026', val: '2026-10-27', col: 2 },
-    { day: 'MIÉ', date: '28 oct 2026', val: '2026-10-28', col: 3 },
-    { day: 'JUE', date: '29 oct 2026', val: '2026-10-29', col: 4 },
-    { day: 'VIE', date: '30 oct 2026', val: '2026-10-30', col: 5 },
-  ];
+    return profAppts.find((a) => a.id === selectedApptId) || profAppts[0] || null
+  }, [profAppts, selectedApptId])
 
   const timeToPixels = (timeStr: string) => {
-    const [h, m] = timeStr.split(':').map(Number);
-    const startHour = 8;
-    const rowHeight = 88;
-    return (h - startHour) * rowHeight + (m / 60) * rowHeight;
-  };
+    const [h, m] = timeStr.split(':').map(Number)
+    const startHour = 8
+    const rowHeight = 88
+    return (h - startHour) * rowHeight + (m / 60) * rowHeight
+  }
 
-  const handleStatusChangeAttempt = (targetStatus: AppointmentStatus) => {
-    setTransitionError(null);
-    if (!selectedAppt) return;
+  const handleStatusChangeAttempt = async (targetStatus: AppointmentStatus) => {
+    setTransitionError(null)
+    if (!selectedAppt) return
 
-    const currentStatus = selectedAppt.status;
-    const ok = changeStatus(selectedAppt.id, targetStatus, { name: session.name, role: session.role });
-
-    if (!ok) {
-      setTransitionError(`No es posible pasar de "${currentStatus}" a "${targetStatus}". Transiciones válidas: programada → confirmada → atendida o no presentada; cancelación desde programada o confirmada.`);
-    }
-  };
-
-  const handleCancelAttempt = () => {
-    setTransitionError(null);
-    if (!selectedAppt) return;
-
-    const currentStatus = selectedAppt.status;
-    const ok = cancelAppointment(selectedAppt.id, { name: session.name, role: session.role }, 'Consulta Profesional');
+    const currentStatus = selectedAppt.status
+    const ok = await changeStatus(selectedAppt, targetStatus, { name: session.name, role: session.role })
 
     if (!ok) {
-      setTransitionError(`No es posible pasar de "${currentStatus}" a "cancelada". Transiciones válidas: programada → confirmada → atendida o no presentada; cancelación desde programada o confirmada.`);
+      setTransitionError(
+        `No es posible pasar de "${currentStatus}" a "${targetStatus}". Transiciones válidas: programada → confirmada → atendida o no presentada; cancelación desde programada o confirmada.`
+      )
     }
-  };
+  }
 
-  const isCurrentWeek = weekOffset === 0;
+  const handleCancelAttempt = async () => {
+    setTransitionError(null)
+    if (!selectedAppt) return
+
+    const currentStatus = selectedAppt.status
+    const ok = await cancelAppointment(selectedAppt, { name: session.name, role: session.role }, 'Consulta Profesional')
+
+    if (!ok) {
+      setTransitionError(
+        `No es posible pasar de "${currentStatus}" a "cancelada". Transiciones válidas: programada → confirmada → atendida o no presentada; cancelación desde programada o confirmada.`
+      )
+    }
+  }
 
   return (
     <>
@@ -1156,12 +1252,10 @@ function Agenda({ session, setScreen }: { session: Session; setScreen: (s: Scree
             <Button variant="secondary" onClick={() => setViewMode(viewMode === 'week' ? 'list' : 'week')}>
               {viewMode === 'week' ? 'Ver en Lista' : 'Ver en Semana'}
             </Button>
-            <Button variant="secondary" onClick={() => setWeekOffset((prev) => prev - 1)}>‹</Button>
-            <Button variant="secondary">
-              26 – 30 oct 2026
-            </Button>
-            <Button variant="secondary" onClick={() => setWeekOffset((prev) => prev + 1)}>›</Button>
-            <Button variant="secondary" onClick={() => setWeekOffset(0)}>Hoy</Button>
+            <Button variant="secondary" aria-label="Semana anterior" onClick={() => setWeekOffset((prev) => prev - 1)}>‹</Button>
+            <Button variant="secondary">{weekRangeLabel}</Button>
+            <Button variant="secondary" aria-label="Semana siguiente" onClick={() => setWeekOffset((prev) => prev + 1)}>›</Button>
+            <Button variant="secondary" onClick={() => setWeekOffset(0)}>Semana demo</Button>
             <Button icon="lock" onClick={() => setScreen('P-05')}>Bloquear horario</Button>
           </div>
         }
@@ -1173,41 +1267,39 @@ function Agenda({ session, setScreen }: { session: Session; setScreen: (s: Scree
         </Alert>
       )}
 
-      {!isCurrentWeek || (profAppts.length === 0 && profBlocks.length === 0) ? (
+      {profAppts.length === 0 && profBlocks.length === 0 ? (
         <div className="card empty-state-card" style={{ padding: '2rem', textAlign: 'center' }}>
           <h3>No hay citas ni bloqueos en este periodo.</h3>
-          <p className="muted" style={{ marginBottom: '1rem' }}>{isCurrentWeek ? 'Cuando haya citas o bloqueos aparecerán aquí.' : 'Selecciona la semana del 26 al 30 de octubre de 2026.'}</p>
+          <p className="muted" style={{ marginBottom: '1rem' }}>
+            Cambia de semana con las flechas o registra un bloqueo de horario.
+          </p>
           <Button icon="lock" onClick={() => setScreen('P-05')}>Bloquear horario</Button>
         </div>
       ) : viewMode === 'list' ? (
         <div className="card">
-          <h2>Lista de citas de la semana</h2>
-          {profAppts.length === 0 ? (
-            <p className="muted">No hay citas registradas para esta semana.</p>
-          ) : (
-            <div className="appointment-list">
-              {profAppts.map((a) => (
-                <article
-                  key={a.id}
-                  className={`appointment-row ${selectedAppt?.id === a.id ? 'is-selected' : ''}`}
-                  onClick={() => setSelectedApptId(a.id)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <div className="appt-main">
-                    <div className="appt-title">
-                      <h2>{a.patientName} ({a.patientId})</h2>
-                      <Status>{a.status}</Status>
-                    </div>
-                    <div className="appt-meta">
-                      <span><Icon name="clock" size={16} />{formatDateLabel(a.date)} · {a.start} - {a.end}</span>
-                      <span><Icon name="users" size={16} />{a.service}</span>
-                      <span><Icon name="calendar" size={16} />Folio {a.id}</span>
-                    </div>
+          <h2>Lista de citas de la semana ({weekRangeLabel})</h2>
+          <div className="appointment-list">
+            {profAppts.map((a) => (
+              <article
+                key={a.id}
+                className={`appointment-row ${selectedAppt?.id === a.id ? 'is-selected' : ''}`}
+                onClick={() => setSelectedApptId(a.id)}
+                style={{ cursor: 'pointer' }}
+              >
+                <div className="appt-main">
+                  <div className="appt-title">
+                    <h2>{a.patientName} ({a.patientId})</h2>
+                    <Status>{a.status}</Status>
                   </div>
-                </article>
-              ))}
-            </div>
-          )}
+                  <div className="appt-meta">
+                    <span><Icon name="clock" size={16} />{formatDateLabel(a.date)} · {a.start} - {a.end}</span>
+                    <span><Icon name="users" size={16} />{a.service}</span>
+                    <span><Icon name="calendar" size={16} />Folio {a.id}</span>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
       ) : (
         <div className="agenda-layout">
@@ -1232,8 +1324,8 @@ function Agenda({ session, setScreen }: { session: Session; setScreen: (s: Scree
                   {profBlocks
                     .filter((b) => b.startDate <= c.val && b.endDate >= c.val)
                     .map((b) => {
-                      const top = timeToPixels(b.startTime);
-                      const height = Math.max(30, timeToPixels(b.endTime) - top);
+                      const top = timeToPixels(b.startTime)
+                      const height = Math.max(30, timeToPixels(b.endTime) - top)
                       return (
                         <div
                           key={b.id}
@@ -1244,29 +1336,29 @@ function Agenda({ session, setScreen }: { session: Session; setScreen: (s: Scree
                           <strong>Bloqueo · {b.reason}</strong>
                           <span>{b.startTime}–{b.endTime}</span>
                         </div>
-                      );
+                      )
                     })}
 
                   {profAppts
                     .filter((a) => a.date === c.val)
                     .map((a) => {
-                      const top = timeToPixels(a.start);
-                      const height = Math.max(44, timeToPixels(a.end) - top);
-                      const isSelected = selectedAppt?.id === a.id;
+                      const top = timeToPixels(a.start)
+                      const height = Math.max(44, timeToPixels(a.end) - top)
+                      const isSelected = selectedAppt?.id === a.id
                       return (
                         <button
                           key={a.id}
                           className={`calendar-appt ${isSelected ? 'selected' : ''}`}
                           style={{ top, height, position: 'absolute', left: 2, right: 2 }}
                           onClick={() => {
-                            setSelectedApptId(a.id);
-                            setTransitionError(null);
+                            setSelectedApptId(a.id)
+                            setTransitionError(null)
                           }}
                         >
                           <strong>{a.start} · {a.patientName}</strong>
                           <span>Cita · {a.status}</span>
                         </button>
-                      );
+                      )
                     })}
                 </div>
               ))}
@@ -1340,7 +1432,9 @@ function Agenda({ session, setScreen }: { session: Session; setScreen: (s: Scree
                       Cancelar cita
                     </button>
                   </div>
-                  <p className="disabled-hint">Transiciones válidas: programada → confirmada → atendida o no presentada; cancelación desde programada o confirmada.</p>
+                  <p className="disabled-hint">
+                    Transiciones válidas: programada → confirmada → atendida o no presentada; cancelación desde programada o confirmada.
+                  </p>
                 </div>
               </>
             ) : (
@@ -1352,46 +1446,48 @@ function Agenda({ session, setScreen }: { session: Session; setScreen: (s: Scree
         </div>
       )}
     </>
-  );
+  )
 }
 
 function BlockSchedule({ session, setScreen }: { session: Session; setScreen: (s: Screen) => void }) {
-  const [startDate, setStartDate] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [endTime, setEndTime] = useState('');
-  const [reason, setReason] = useState<BlockReason>('Capacitación');
-  const [detail, setDetail] = useState('');
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [startDate, setStartDate] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [endTime, setEndTime] = useState('')
+  const [reason, setReason] = useState<BlockReason>('Capacitación')
+  const [detail, setDetail] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState(false)
   const [conflictResult, setConflictResult] = useState<{
-    success: boolean;
-    affectedAppointments?: Appointment[];
-  } | null>(null);
+    success: boolean
+    affectedAppointments?: Appointment[]
+  } | null>(null)
 
   const validate = () => {
-    const errs: Record<string, string> = {};
-    if (!startDate) errs.startDate = 'Obligatorio';
-    if (!startTime) errs.startTime = 'Obligatorio';
-    if (!endDate) errs.endDate = 'Obligatorio';
-    if (!endTime) errs.endTime = 'Obligatorio';
+    const errs: Record<string, string> = {}
+    if (!startDate) errs.startDate = 'Obligatorio'
+    if (!startTime) errs.startTime = 'Obligatorio'
+    if (!endDate) errs.endDate = 'Obligatorio'
+    if (!endTime) errs.endTime = 'Obligatorio'
 
     if (startDate && startTime && endDate && endTime) {
-      const startDT = `${startDate}T${startTime}`;
-      const endDT = `${endDate}T${endTime}`;
+      const startDT = `${startDate}T${startTime}`
+      const endDT = `${endDate}T${endTime}`
       if (endDT <= startDT) {
-        errs.range = 'La fecha y hora de fin deben ser posteriores al inicio.';
+        errs.range = 'La fecha y hora de fin deben ser posteriores al inicio.'
       }
     }
 
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
-  };
+    setErrors(errs)
+    return Object.keys(errs).length === 0
+  }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validate()) return;
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!validate()) return
 
-    const res = createBlock(
+    setSubmitting(true)
+    const res = await createBlock(
       {
         professional: session.name,
         startDate,
@@ -1402,10 +1498,11 @@ function BlockSchedule({ session, setScreen }: { session: Session; setScreen: (s
         detail,
       },
       { name: session.name, role: session.role }
-    );
+    )
+    setSubmitting(false)
 
-    setConflictResult(res);
-  };
+    setConflictResult(res)
+  }
 
   return (
     <>
@@ -1508,7 +1605,9 @@ function BlockSchedule({ session, setScreen }: { session: Session; setScreen: (s
 
               <div className="form-actions">
                 <Button variant="secondary" onClick={() => setScreen('P-04')}>Cancelar</Button>
-                <Button type="submit">Registrar bloqueo</Button>
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? 'Validando...' : 'Registrar bloqueo'}
+                </Button>
               </div>
             </form>
           </section>
@@ -1524,84 +1623,107 @@ function BlockSchedule({ session, setScreen }: { session: Session; setScreen: (s
         </div>
       )}
     </>
-  );
+  )
 }
 
-function MyAppointments({ session, reception, setScreen }: { session: Session; reception: boolean; setScreen: (s: Screen) => void }) {
-  const store = useStore();
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [modal, setModal] = useState<'reschedule' | 'cancel' | null>(null);
-  const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null);
-  const [toast, setToast] = useState('');
-  const [cancelChannel, setCancelChannel] = useState('Ventanilla');
-  const [rescheduleSlot, setRescheduleSlot] = useState<SlotInfo | null>(null);
-  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
+function MyAppointments({
+  session,
+  reception,
+  setScreen,
+}: {
+  session: Session
+  reception: boolean
+  setScreen: (s: Screen) => void
+}) {
+  const store = useStore()
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [modal, setModal] = useState<'reschedule' | 'cancel' | null>(null)
+  const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null)
+  const [toast, setToast] = useState('')
+  const [cancelChannel, setCancelChannel] = useState('Ventanilla')
+  const [rescheduleDate, setRescheduleDate] = useState('2026-10-26')
+  const [rescheduleSlot, setRescheduleSlot] = useState<SlotInfo | null>(null)
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null)
+  const [processing, setProcessing] = useState(false)
 
   const baseAppointments = useMemo(() => {
-    if (reception) return store.appointments;
-    return store.appointments.filter((a) => a.patientId === session.id);
-  }, [store.appointments, reception, session.id]);
+    if (reception) return store.appointments
+    return store.appointments.filter((a) => a.patientId === session.id)
+  }, [store.appointments, reception, session.id])
 
   const upcomingAppts = useMemo(() => {
-    return baseAppointments.filter((a) => a.status === 'programada' || a.status === 'confirmada');
-  }, [baseAppointments]);
+    return baseAppointments.filter((a) => a.status === 'programada' || a.status === 'confirmada')
+  }, [baseAppointments])
 
   const historyAppts = useMemo(() => {
-    return baseAppointments.filter((a) => a.status === 'atendida' || a.status === 'no presentada' || a.status === 'cancelada');
-  }, [baseAppointments]);
+    return baseAppointments.filter(
+      (a) => a.status === 'atendida' || a.status === 'no presentada' || a.status === 'cancelada'
+    )
+  }, [baseAppointments])
 
   const filteredAppts = useMemo(() => {
-    const list = activeTab === 'upcoming' ? upcomingAppts : historyAppts;
-    const q = searchQuery.trim().toLowerCase();
+    const list = activeTab === 'upcoming' ? upcomingAppts : historyAppts
+    const q = searchQuery.trim().toLowerCase()
     if (!q) {
-      return [...list].sort((a, b) => `${a.date}T${a.start}`.localeCompare(`${b.date}T${b.start}`));
+      return [...list].sort((a, b) => `${a.date}T${a.start}`.localeCompare(`${b.date}T${b.start}`))
     }
     return list
-      .filter((a) =>
-        a.id.toLowerCase().includes(q) ||
-        a.service.toLowerCase().includes(q) ||
-        a.professional.toLowerCase().includes(q) ||
-        a.patientName.toLowerCase().includes(q)
+      .filter(
+        (a) =>
+          a.id.toLowerCase().includes(q) ||
+          a.service.toLowerCase().includes(q) ||
+          a.professional.toLowerCase().includes(q) ||
+          a.patientName.toLowerCase().includes(q)
       )
-      .sort((a, b) => `${a.date}T${a.start}`.localeCompare(`${b.date}T${b.start}`));
-  }, [activeTab, upcomingAppts, historyAppts, searchQuery]);
+      .sort((a, b) => `${a.date}T${a.start}`.localeCompare(`${b.date}T${b.start}`))
+  }, [activeTab, upcomingAppts, historyAppts, searchQuery])
 
   const availableRescheduleSlots = useMemo(() => {
-    if (!selectedAppt) return [];
-    return getSlots(selectedAppt.service).filter((s) => s.isAvailable);
-  }, [selectedAppt]);
+    if (!selectedAppt) return []
+    return getSlotsForRange(
+      selectedAppt.service,
+      rescheduleDate,
+      rescheduleDate,
+      store.appointments,
+      store.blocks
+    ).filter((s) => s.isAvailable)
+  }, [selectedAppt, rescheduleDate, store.appointments, store.blocks])
 
-  const handleConfirmCancel = () => {
-    if (!selectedAppt) return;
-    const ok = cancelAppointment(
-      selectedAppt.id,
+  const handleConfirmCancel = async () => {
+    if (!selectedAppt) return
+    setProcessing(true)
+    const ok = await cancelAppointment(
+      selectedAppt,
       { name: session.name, role: session.role },
       cancelChannel
-    );
+    )
+    setProcessing(false)
     if (ok) {
-      setToast('Cita cancelada');
-      setModal(null);
+      setToast('Cita cancelada')
+      setModal(null)
     }
-  };
+  }
 
-  const handleConfirmReschedule = () => {
-    if (!selectedAppt || !rescheduleSlot) return;
-    setRescheduleError(null);
-    const res = rescheduleAppointment(
-      selectedAppt.id,
+  const handleConfirmReschedule = async () => {
+    if (!selectedAppt || !rescheduleSlot) return
+    setRescheduleError(null)
+    setProcessing(true)
+    const res = await rescheduleAppointment(
+      selectedAppt,
       rescheduleSlot.dateVal,
       rescheduleSlot.start,
       rescheduleSlot.end,
       { name: session.name, role: session.role }
-    );
+    )
+    setProcessing(false)
     if (res.ok) {
-      setToast('Cita reprogramada');
-      setModal(null);
+      setToast('Cita reprogramada')
+      setModal(null)
     } else {
-      setRescheduleError(res.error || 'No se pudo reprogramar la cita.');
+      setRescheduleError(res.error || 'No se pudo reprogramar la cita.')
     }
-  };
+  }
 
   return (
     <>
@@ -1612,7 +1734,7 @@ function MyAppointments({ session, reception, setScreen }: { session: Session; r
       {toast && (
         <Alert kind="success">
           <strong>{toast}</strong>
-          <span>El cambio se guardó correctamente.</span>
+          <span>El cambio se guardó en Payload CMS.</span>
         </Alert>
       )}
 
@@ -1636,7 +1758,7 @@ function MyAppointments({ session, reception, setScreen }: { session: Session; r
         <div className="search-field">
           <Icon name="search" size={18} />
           <input
-            placeholder="Buscar por folio, servicio, profesional..."
+            placeholder="Buscar por folio, servicio, profesional o persona..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -1650,10 +1772,10 @@ function MyAppointments({ session, reception, setScreen }: { session: Session; r
       ) : (
         <div className="appointment-list">
           {filteredAppts.map((a) => {
-            const canModify = a.status === 'programada' || a.status === 'confirmada';
-            const [year, monthNum, day] = a.date.split('-');
-            const months = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
-            const monthLabel = months[parseInt(monthNum, 10) - 1] || 'OCT';
+            const canModify = a.status === 'programada' || a.status === 'confirmada'
+            const [year, monthNum, day] = a.date.split('-')
+            const months = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC']
+            const monthLabel = months[parseInt(monthNum, 10) - 1] || 'OCT'
 
             return (
               <article className="appointment-row" key={a.id}>
@@ -1680,10 +1802,11 @@ function MyAppointments({ session, reception, setScreen }: { session: Session; r
                       <Button
                         variant="secondary"
                         onClick={() => {
-                          setSelectedAppt(a);
-                          setRescheduleSlot(null);
-                          setRescheduleError(null);
-                          setModal('reschedule');
+                          setSelectedAppt(a)
+                          setRescheduleDate(a.date)
+                          setRescheduleSlot(null)
+                          setRescheduleError(null)
+                          setModal('reschedule')
                         }}
                       >
                         Reprogramar
@@ -1691,8 +1814,8 @@ function MyAppointments({ session, reception, setScreen }: { session: Session; r
                       <Button
                         variant="ghost"
                         onClick={() => {
-                          setSelectedAppt(a);
-                          setModal('cancel');
+                          setSelectedAppt(a)
+                          setModal('cancel')
                         }}
                       >
                         Cancelar
@@ -1701,7 +1824,7 @@ function MyAppointments({ session, reception, setScreen }: { session: Session; r
                   )}
                 </div>
               </article>
-            );
+            )
           })}
         </div>
       )}
@@ -1718,12 +1841,22 @@ function MyAppointments({ session, reception, setScreen }: { session: Session; r
                   <span>{rescheduleError}</span>
                 </Alert>
               )}
-              <p>Selecciona una nueva franja disponible para <strong>{selectedAppt.service}</strong>.</p>
+              <p>Selecciona una nueva fecha y franja disponible para <strong>{selectedAppt.service}</strong>.</p>
+              <Field label="Nueva fecha (Lunes a Viernes)">
+                <input
+                  type="date"
+                  value={rescheduleDate}
+                  onChange={(e) => {
+                    setRescheduleDate(e.target.value)
+                    setRescheduleSlot(null)
+                  }}
+                />
+              </Field>
               <Field label="Nueva franja horaria">
                 <select onChange={(e) => {
-                  const s = availableRescheduleSlots.find((slot) => slot.id === e.target.value);
-                  setRescheduleSlot(s || null);
-                  setRescheduleError(null);
+                  const s = availableRescheduleSlots.find((slot) => slot.id === e.target.value)
+                  setRescheduleSlot(s || null)
+                  setRescheduleError(null)
                 }}>
                   <option value="">Selecciona una franja...</option>
                   {availableRescheduleSlots.map((s) => (
@@ -1735,8 +1868,8 @@ function MyAppointments({ session, reception, setScreen }: { session: Session; r
               </Field>
               <div className="modal-actions">
                 <Button variant="secondary" onClick={() => setModal(null)}>Volver</Button>
-                <Button disabled={!rescheduleSlot} onClick={handleConfirmReschedule}>
-                  Confirmar cambio
+                <Button disabled={!rescheduleSlot || processing} onClick={handleConfirmReschedule}>
+                  {processing ? 'Guardando...' : 'Confirmar cambio'}
                 </Button>
               </div>
             </>
@@ -1755,8 +1888,8 @@ function MyAppointments({ session, reception, setScreen }: { session: Session; r
               </Field>
               <div className="modal-actions">
                 <Button variant="secondary" onClick={() => setModal(null)}>Volver</Button>
-                <Button variant="danger" onClick={handleConfirmCancel}>
-                  Cancelar cita
+                <Button variant="danger" disabled={processing} onClick={handleConfirmCancel}>
+                  {processing ? 'Cancelando...' : 'Cancelar cita'}
                 </Button>
               </div>
             </>
@@ -1764,28 +1897,30 @@ function MyAppointments({ session, reception, setScreen }: { session: Session; r
         </Modal>
       )}
     </>
-  );
+  )
 }
 
 function Modal({ title, close, children }: { title: string; close: () => void; children: ReactNode }) {
-  const modalRef = useRef<HTMLDivElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        close();
+        close()
       }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [close]);
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [close])
 
   useEffect(() => {
     if (modalRef.current) {
-      const focusable = modalRef.current.querySelector<HTMLElement>('button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
-      if (focusable) focusable.focus();
+      const focusable = modalRef.current.querySelector<HTMLElement>(
+        'button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+      if (focusable) focusable.focus()
     }
-  }, []);
+  }, [])
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-title-id">
@@ -1797,50 +1932,50 @@ function Modal({ title, close, children }: { title: string; close: () => void; c
         <div className="modal-body">{children}</div>
       </div>
     </div>
-  );
+  )
 }
 
 function Catalogs() {
-  const [tab, setTab] = useState<'Servicios' | 'Profesionales' | 'Consultorios' | 'Políticas de agenda'>('Servicios');
-  const [search, setSearch] = useState('');
+  const [tab, setTab] = useState<'Servicios' | 'Profesionales' | 'Consultorios' | 'Políticas de agenda'>('Servicios')
+  const [search, setSearch] = useState('')
 
   const servicesData = [
     ['Consulta general', '30 min', 'Presencial', '1', 'Activo'],
     ['Nutrición', '30 min', 'Presencial / remota', '1', 'Activo'],
     ['Psicología preventiva', '30 min', 'Presencial', '1', 'Activo'],
     ['Orientación', '30 min', 'Presencial / remota', '1', 'Activo'],
-  ];
+  ]
 
   const professionalsData = [
     ['Dra. Laura Mendoza', 'Consulta general', 'Consultorio 2', 'Activo'],
     ['Dr. Carlos Ibarra', 'Nutrición', 'Consultorio 3', 'Activo'],
     ['Lic. Sofía Herrera', 'Psicología preventiva', 'Consultorio 4', 'Activo'],
     ['Mtro. Diego Ramírez', 'Orientación', 'Consultorio 1', 'Activo'],
-  ];
+  ]
 
   const roomsData = [
     ['Consultorio 1', 'Orientación', 'Mtro. Diego Ramírez'],
     ['Consultorio 2', 'Consulta general', 'Dra. Laura Mendoza'],
     ['Consultorio 3', 'Nutrición', 'Dr. Carlos Ibarra'],
     ['Consultorio 4', 'Psicología preventiva', 'Lic. Sofía Herrera'],
-  ];
+  ]
 
   const policiesData = [
     ['Duración de franja', '30 minutos por cita para todos los servicios.'],
-    ['Horario de atención', 'Lunes a viernes de 09:00 a 14:00 (semana del 26 al 30 de octubre de 2026).'],
+    ['Horario de atención', 'Lunes a viernes de 09:00 a 14:00 (cualquier fecha hábil futura y semana demo).'],
     ['Cancelaciones y reprogramaciones', 'Permitidas únicamente desde estados "programada" o "confirmada".'],
     ['Gestión de bloqueos', 'Los bloqueos retiran la disponibilidad pero no cancelan citas existentes automáticamente.'],
     ['Restricción de franjas', 'Las franjas ocupadas o bloqueadas no se ofrecen a nuevas solicitudes.'],
-  ];
+  ]
 
-  const filterText = search.trim().toLowerCase();
+  const filterText = search.trim().toLowerCase()
 
   return (
     <>
       <PageHeader screen="P-07" />
       <div className="catalog-read-only-note">
         <Alert kind="warning">
-          <span>Prototipo: catálogos de solo lectura.</span>
+          <span>Prototipo: catálogos institucionales de solo lectura.</span>
         </Alert>
       </div>
 
@@ -1849,7 +1984,7 @@ function Catalogs() {
           <button
             type="button"
             className={tab === t ? 'active' : ''}
-            onClick={() => { setTab(t); setSearch(''); }}
+            onClick={() => { setTab(t); setSearch('') }}
             key={t}
           >
             {t}
@@ -1966,20 +2101,20 @@ function Catalogs() {
         )}
       </section>
     </>
-  );
+  )
 }
 
 function Indicators() {
-  const store = useStore();
+  const store = useStore()
 
-  const attended = store.appointments.filter((a) => a.status === 'atendida').length;
-  const noShow = store.appointments.filter((a) => a.status === 'no presentada').length;
-  const canceled = store.appointments.filter((a) => a.status === 'cancelada').length;
-  const total = store.appointments.length;
+  const attended = store.appointments.filter((a) => a.status === 'atendida').length
+  const noShow = store.appointments.filter((a) => a.status === 'no presentada').length
+  const canceled = store.appointments.filter((a) => a.status === 'cancelada').length
+  const total = store.appointments.length
 
-  const denominator = attended + noShow;
-  const attendanceRate = denominator > 0 ? ((attended / denominator) * 100).toFixed(1) + '%' : '—';
-  const cancelRate = total > 0 ? ((canceled / total) * 100).toFixed(1) + '%' : '0.0%';
+  const denominator = attended + noShow
+  const attendanceRate = denominator > 0 ? ((attended / denominator) * 100).toFixed(1) + '%' : '—'
+  const cancelRate = total > 0 ? ((canceled / total) * 100).toFixed(1) + '%' : '0.0%'
 
   const weekDays = [
     { label: 'Lun', dateVal: '2026-10-26' },
@@ -1987,20 +2122,20 @@ function Indicators() {
     { label: 'Mié', dateVal: '2026-10-28' },
     { label: 'Jue', dateVal: '2026-10-29' },
     { label: 'Vie', dateVal: '2026-10-30' },
-  ];
+  ]
 
   const dayCounts = weekDays.map((d) => {
-    const count = store.appointments.filter((a) => a.date === d.dateVal && a.status !== 'cancelada').length;
-    return { ...d, count };
-  });
+    const count = store.appointments.filter((a) => a.date === d.dateVal && a.status !== 'cancelada').length
+    return { ...d, count }
+  })
 
-  const maxDayCount = Math.max(...dayCounts.map((d) => d.count), 1);
+  const maxDayCount = Math.max(...dayCounts.map((d) => d.count), 1)
 
-  const services = ['Consulta general', 'Nutrición', 'Psicología preventiva', 'Orientación'];
+  const services = ['Consulta general', 'Nutrición', 'Psicología preventiva', 'Orientación']
   const serviceDistribution = services.map((s) => {
-    const count = store.appointments.filter((a) => a.service === s).length;
-    return { name: s, count };
-  });
+    const count = store.appointments.filter((a) => a.service === s).length
+    return { name: s, count }
+  })
 
   return (
     <>
@@ -2008,7 +2143,9 @@ function Indicators() {
         screen="P-08"
         action={
           <div className="date-navigation">
-            <Button variant="secondary">26 – 30 oct 2026</Button>
+            <Button variant="secondary" onClick={() => refreshStoreData()}>
+              Actualizar indicadores
+            </Button>
           </div>
         }
       />
@@ -2016,7 +2153,7 @@ function Indicators() {
       {total === 0 ? (
         <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
           <h3>Aún no hay datos para el periodo.</h3>
-          <p className="muted">Registra citas para visualizar indicadores reales.</p>
+          <p className="muted">Registra citas para visualizar indicadores reales desde Payload CMS.</p>
         </div>
       ) : (
         <>
@@ -2037,7 +2174,7 @@ function Indicators() {
               <div className="kpi-icon kpi-0"><Icon name="calendar" /></div>
               <span>Total de citas</span>
               <strong>{total}</strong>
-              <small>En la semana de referencia</small>
+              <small>Registradas en Payload</small>
             </div>
             <div className="kpi">
               <div className="kpi-icon kpi-2"><Icon name="clock" /></div>
@@ -2049,11 +2186,11 @@ function Indicators() {
 
           <div className="dashboard-grid">
             <section className="card">
-              <h2>Citas por semana (Lun – Vie)</h2>
-              <p className="muted">Citas activas (no canceladas) por día.</p>
+              <h2>Citas por semana demo (Lun – Vie)</h2>
+              <p className="muted">Citas activas (no canceladas) por día en la semana de referencia.</p>
               <div className="weekly-bar-container">
                 {dayCounts.map((d) => {
-                  const heightPercent = (d.count / maxDayCount) * 100;
+                  const heightPercent = (d.count / maxDayCount) * 100
                   return (
                     <div key={d.label} className="weekly-bar-col">
                       <span className="bar-value">{d.count}</span>
@@ -2062,14 +2199,14 @@ function Indicators() {
                       </div>
                       <span className="bar-label">{d.label}</span>
                     </div>
-                  );
+                  )
                 })}
               </div>
             </section>
 
             <section className="card">
               <h2>Distribución por servicio</h2>
-              <p className="muted">Conteo de citas registradas por cada especialidad.</p>
+              <p className="muted">Conteo total de citas registradas por cada especialidad.</p>
               <div className="service-dist-list">
                 {serviceDistribution.map((s) => (
                   <div key={s.name} className="service-dist-item">
@@ -2091,28 +2228,35 @@ function Indicators() {
         </>
       )}
     </>
-  );
+  )
 }
 
 function AuditLog() {
-  const store = useStore();
-  const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState('Todos');
+  const store = useStore()
+  const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState('Todos')
 
   const filteredAudit = useMemo(() => {
     return store.audit.filter((entry) => {
-      const matchRole = roleFilter === 'Todos' || entry.role === roleFilter;
+      const matchRole = roleFilter === 'Todos' || entry.role === roleFilter
       const matchSearch =
         entry.userName.toLowerCase().includes(search.toLowerCase()) ||
         entry.action.toLowerCase().includes(search.toLowerCase()) ||
-        entry.reference.toLowerCase().includes(search.toLowerCase());
-      return matchRole && matchSearch;
-    });
-  }, [store.audit, search, roleFilter]);
+        entry.reference.toLowerCase().includes(search.toLowerCase())
+      return matchRole && matchSearch
+    })
+  }, [store.audit, search, roleFilter])
 
   return (
     <>
-      <PageHeader screen="P-09" />
+      <PageHeader
+        screen="P-09"
+        action={
+          <Button variant="secondary" onClick={() => refreshStoreData()}>
+            Actualizar bitácora
+          </Button>
+        }
+      />
       <section className="table-card">
         <div className="table-toolbar audit-toolbar">
           <div className="search-field">
@@ -2177,52 +2321,51 @@ function AuditLog() {
         </div>
       </section>
     </>
-  );
+  )
 }
 
 export default function App() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [screen, setScreen] = useState<Screen>('P-02');
-  const [authView, setAuthView] = useState<'login' | 'register'>('login');
-  const [registerSuccessMessage, setRegisterSuccessMessage] = useState<string | null>(null);
-
-  const [takenSlotIds, setTakenSlotIds] = useState<string[]>([]);
+  const [session, setSession] = useState<Session | null>(null)
+  const [screen, setScreen] = useState<Screen>('P-02')
+  const [authView, setAuthView] = useState<'login' | 'register'>('login')
+  const [registerSuccessMessage, setRegisterSuccessMessage] = useState<string | null>(null)
+  const [takenSlotIds, setTakenSlotIds] = useState<string[]>([])
 
   useEffect(() => {
-    initializePreloadedUsers().then(() => {
-      const activeSession = getSession();
-      if (activeSession) {
-        setSession(activeSession);
-        setScreen(roleMenu[activeSession.role][0].id);
-      }
-    });
-  }, []);
+    const activeSession = getSession()
+    if (activeSession) {
+      setSession(activeSession)
+      setScreen(roleMenu[activeSession.role][0].id)
+      refreshStoreData()
+    }
+  }, [])
 
   const login = (newSession: Session) => {
-    setSession(newSession);
-    setScreen(roleMenu[newSession.role][0].id);
-    setAuthView('login');
-    setRegisterSuccessMessage(null);
-  };
+    setSession(newSession)
+    setScreen(roleMenu[newSession.role][0].id)
+    setAuthView('login')
+    setRegisterSuccessMessage(null)
+    refreshStoreData()
+  }
 
   const logout = () => {
-    clearSession();
-    setSession(null);
-    setAuthView('login');
-  };
+    clearSession()
+    setSession(null)
+    setAuthView('login')
+  }
 
   const handleMarkSlotTaken = (id: string) => {
-    setTakenSlotIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-  };
+    setTakenSlotIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+  }
 
   const handleRegisterSuccess = () => {
-    setAuthView('login');
-    setRegisterSuccessMessage('Cuenta creada. Ahora inicia sesión con tu usuario y contraseña.');
-  };
+    setAuthView('login')
+    setRegisterSuccessMessage('Cuenta creada en Payload CMS. Ahora inicia sesión con tu usuario y contraseña.')
+  }
 
   const view = useMemo(() => {
-    if (!session) return null;
-    const role = session.role;
+    if (!session) return null
+    const role = session.role
 
     if (screen === 'P-02') {
       return (
@@ -2233,25 +2376,20 @@ export default function App() {
           takenSlotIds={takenSlotIds}
           onMarkSlotTaken={handleMarkSlotTaken}
         />
-      );
+      )
     }
     if (screen === 'P-03') {
-      return (
-        <Register
-          session={session}
-          setScreen={setScreen}
-          takenSlotIds={takenSlotIds}
-          onMarkSlotTaken={handleMarkSlotTaken}
-        />
-      );
+      return <Register session={session} setScreen={setScreen} takenSlotIds={takenSlotIds} onMarkSlotTaken={handleMarkSlotTaken} />
     }
-    if (screen === 'P-04') return <Agenda session={session} setScreen={setScreen} />;
-    if (screen === 'P-05') return <BlockSchedule session={session} setScreen={setScreen} />;
-    if (screen === 'P-06') return <MyAppointments session={session} reception={role === 'Recepción'} setScreen={setScreen} />;
-    if (screen === 'P-07') return <Catalogs />;
-    if (screen === 'P-08') return <Indicators />;
-    return <AuditLog />;
-  }, [session, screen, takenSlotIds]);
+    if (screen === 'P-04') return <Agenda session={session} setScreen={setScreen} />
+    if (screen === 'P-05') return <BlockSchedule session={session} setScreen={setScreen} />
+    if (screen === 'P-06') {
+      return <MyAppointments session={session} reception={role === 'Recepción'} setScreen={setScreen} />
+    }
+    if (screen === 'P-07') return <Catalogs />
+    if (screen === 'P-08') return <Indicators />
+    return <AuditLog />
+  }, [session, screen, takenSlotIds])
 
   if (!session) {
     if (authView === 'register') {
@@ -2260,22 +2398,20 @@ export default function App() {
           onGoToLogin={() => setAuthView('login')}
           onRegisterSuccess={handleRegisterSuccess}
         />
-      );
+      )
     }
     return (
       <Login
         onLogin={login}
         onGoToRegister={() => setAuthView('register')}
-        onReset={() => setTakenSlotIds([])}
         successMessage={registerSuccessMessage}
       />
-    );
+    )
   }
 
   return (
     <Shell session={session} screen={screen} setScreen={setScreen} logout={logout}>
       {view}
     </Shell>
-  );
+  )
 }
-
