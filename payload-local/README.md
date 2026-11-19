@@ -68,6 +68,68 @@ Listo para desplegar sin cambios de código adicionales:
   `VITE_PAYLOAD_API_URL` es variable de BUILD: debe construirse después de
   conocer la URL pública del backend.
 
+## Producción / Neon + Vercel (2026-11-19)
+
+Railway quedó bloqueado (el trial de Markus terminó y pide pago), así que el
+objetivo de despliegue pasa a **Neon (Postgres, plan gratuito) + Vercel
+Hobby (gratis, sin tarjeta)**. El backend ya está migrado a Postgres en
+este repo; la fase de navegador (crear la base en Neon y desplegar en
+Vercel) queda pendiente.
+
+- **Adaptador dual en `src/payload.config.ts`:** el adaptador se elige solo
+  por el esquema de `DATABASE_URI` — `file:...` → SQLite local (como
+  siempre), `postgres://` / `postgresql://` → Postgres. La instalación
+  local sigue funcionando igual con `./medinex.db`.
+- **Migración de Postgres:** `src/migrations-postgres/20261119_190020_initial.ts`
+  (+ `index.ts`), equivalente a la de SQLite: 4 tipos ENUM
+  (`enum_users_role`, `enum_appointments_status`,
+  `enum_schedule_blocks_reason`, `enum_audit_log_result`), 11 tablas y 33
+  índices; ids `serial`, timestamps `timestamp(3) with time zone`,
+  `payload_kv.data` como `jsonb`. La migración de SQLite queda intacta.
+- **Neon, plan gratuito (verificado 2026-11-19):** $0, sin tarjeta, sin
+  límite de tiempo; 100 CU-hours por proyecto al mes, 1 GB de almacenamiento
+  por proyecto (20 GB en total por cuenta), hasta 2 CU (8 GB RAM), 10 ramas,
+  5 GB de egress por proyecto. La base se apaga a los 5 min sin uso
+  (scale-to-zero) y la primera consulta la despierta (cold start de unos
+  segundos). Si se acaban las CU-hours o el egress, el cómputo se suspende
+  hasta el siguiente ciclo mensual o hasta subir de plan. La DB de MEDINEX
+  mide 204 KB (17 usuarios, 5 citas, 9 entradas de bitácora): ~5.000 veces
+  por debajo del límite de 1 GB. Para este uso el plan sobra.
+- **Variables para la fase de navegador (Vercel + Neon):**
+  `DATABASE_URI` = cadena pooled de Neon con `?sslmode=require`;
+  `PAYLOAD_SECRET` = generar uno nuevo aleatorio (no reusar el local);
+  `PAYLOAD_SERVER_URL` = URL pública del backend;
+  `FRONTEND_URL` = URL pública del frontend.
+  El frontend (`../gitwork`) se despliega como sitio estático Vite (raíz
+  del repo) con `VITE_PAYLOAD_API_URL` como variable de BUILD.
+- **Respaldo:** si Vercel no pudiera alojar el backend de Payload, Render
+  (plan gratuito) — como los datos viven en Neon, su disco efímero no
+  importa.
+- **Verificación local (Postgres 16 real, DB de prueba vacía, borrada
+  después):** `npx tsc --noEmit` OK, `npm run build` OK; `NODE_ENV=production
+  next start` con `DATABASE_URI=postgres://...`: log `Migrating:
+  20261119_190020_initial` → `Migrated (62ms)`; GET /api/users sin auth 403;
+  POST /api/users markus 201; login markus/1234 200 + JWT; POST
+  /api/appointments CIT-0001 201; GET /api/users con token 200 (1 usuario);
+  GET /api/appointments 200 (1 cita); schedule-blocks 0, audit-log 0; GET
+  /admin 200. Esquema verificado en la base: 11 tablas, 4 tipos ENUM,
+  `payload_migrations` con batch 1, `users.role` como `enum_users_role`.
+  Segundo arranque: migración saltada, datos intactos (login + 1 cita).
+  Dos fallos encontrados y corregidos en el camino: (1) la migración
+  creaba `users_sessions` antes que `users` y Postgres exige que la tabla
+  referenciada exista (en SQLite el orden no importaba) — reordenado;
+  (2) el rol de prueba no tenía CREATE sobre el esquema `public` (en PG 16
+  ya no viene por defecto) — en Neon el usuario es dueño de su base, así
+  que no aplica. Servidores de prueba detenidos y DBs de prueba eliminadas.
+- **Camino SQLite intacto:** con `DATABASE_URI=file:...` el servidor
+  sigue usando SQLite y su migración original; verificado con una DB
+  vacía en producción (migración + crear usuario 201 + login 200). OJO:
+  arrancar en producción contra el `medinex.db` local viejo se detiene en
+  la pregunta interactiva de Payload (esa base tiene un registro de
+  migración con batch -1 por los pushes de desarrollo); en local se usa
+  `npm run dev` como siempre, y en Neon la base empieza vacía, así que
+  no aplica.
+
 ## Notas
 
 - `npx payload generate:importmap` falla en este Node (v24.22.1) por un choque
