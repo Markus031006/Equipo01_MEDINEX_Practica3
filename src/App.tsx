@@ -572,8 +572,18 @@ function Reserve({
   const store = useStore()
   const [service, setService] = useState('Consulta general')
   const [professional, setProfessional] = useState('Dra. Laura Mendoza')
-  const [dateFrom, setDateFrom] = useState('2026-10-26')
-  const [dateTo, setDateTo] = useState('2026-10-30')
+  const [weekOffset, setWeekOffset] = useState(0)
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const week = useMemo(() => {
+    const monday = getMondayOfWeek(todayStr, weekOffset)
+    const friday = new Date(monday)
+    friday.setUTCDate(friday.getUTCDate() + 4)
+    const from = formatISODate(monday)
+    const to = formatISODate(friday)
+    return { from, to, label: `${formatDateLabel(from).replace(' 2026', '')} – ${formatDateLabel(to)}` }
+  }, [todayStr, weekOffset])
+  const dateFrom = week.from
+  const dateTo = week.to
   const [selectedSlot, setSelectedSlot] = useState<SlotInfo | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [createdAppointmentId, setCreatedAppointmentId] = useState<string | null>(null)
@@ -583,8 +593,10 @@ function Reserve({
   const alertRef = useRef<HTMLDivElement | null>(null)
 
   const slots = useMemo(() => {
-    return getSlotsForRange(service, dateFrom, dateTo, store.appointments, store.blocks)
-  }, [service, dateFrom, dateTo, store.appointments, store.blocks])
+    return getSlotsForRange(service, dateFrom, dateTo, store.appointments, store.blocks).filter(
+      (s) => s.dateVal >= todayStr,
+    )
+  }, [service, dateFrom, dateTo, todayStr, store.appointments, store.blocks])
 
   useEffect(() => {
     if (errorMsg && alertRef.current) {
@@ -595,6 +607,25 @@ function Reserve({
   const handleServiceChange = (s: string) => {
     setService(s)
     setProfessional(professionalNames[s] || '')
+    setSelectedSlot(null)
+    setErrorMsg(null)
+  }
+
+  const goToPrevWeek = () => {
+    if (weekOffset === 0) return
+    setWeekOffset((prev) => prev - 1)
+    setSelectedSlot(null)
+    setErrorMsg(null)
+  }
+
+  const goToNextWeek = () => {
+    setWeekOffset((prev) => prev + 1)
+    setSelectedSlot(null)
+    setErrorMsg(null)
+  }
+
+  const goToCurrentWeek = () => {
+    setWeekOffset(0)
     setSelectedSlot(null)
     setErrorMsg(null)
   }
@@ -733,30 +764,14 @@ function Reserve({
               <option>{professionalNames[service]}</option>
             </select>
           </Field>
-          <Field label="Fecha desde">
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value)
-                if (e.target.value > dateTo) setDateTo(e.target.value)
-                setSelectedSlot(null)
-              }}
-            />
-          </Field>
-          <Field label="Fecha hasta">
-            <input
-              type="date"
-              value={dateTo}
-              min={dateFrom}
-              onChange={(e) => {
-                setDateTo(e.target.value)
-                setSelectedSlot(null)
-              }}
-            />
-          </Field>
         </div>
         <div className="filter-actions">
+          <div className="date-navigation" style={{ marginRight: 'auto' }}>
+            <Button variant="secondary" aria-label="Semana anterior" disabled={weekOffset === 0} onClick={goToPrevWeek}>‹</Button>
+            <Button variant="secondary">{week.label}</Button>
+            <Button variant="secondary" aria-label="Semana siguiente" onClick={goToNextWeek}>›</Button>
+            <Button variant="secondary" disabled={weekOffset === 0} onClick={goToCurrentWeek}>Semana actual</Button>
+          </div>
           <Button icon="search" onClick={() => refreshStoreData()}>
             Actualizar disponibilidad
           </Button>
@@ -879,8 +894,18 @@ function Register({
   const [originChannel, setOriginChannel] = useState<BookingChannel>('Ventanilla')
   const [service, setService] = useState('Consulta general')
   const [professional, setProfessional] = useState('Dra. Laura Mendoza')
-  const [dateFrom, setDateFrom] = useState('2026-10-26')
-  const [dateTo, setDateTo] = useState('2026-10-30')
+  const [weekOffset, setWeekOffset] = useState(0)
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const week = useMemo(() => {
+    const monday = getMondayOfWeek(todayStr, weekOffset)
+    const friday = new Date(monday)
+    friday.setUTCDate(friday.getUTCDate() + 4)
+    const from = formatISODate(monday)
+    const to = formatISODate(friday)
+    return { from, to, label: `${formatDateLabel(from).replace(' 2026', '')} – ${formatDateLabel(to)}` }
+  }, [todayStr, weekOffset])
+  const dateFrom = week.from
+  const dateTo = week.to
 
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [selectedSlot, setSelectedSlot] = useState<SlotInfo | null>(null)
@@ -891,8 +916,10 @@ function Register({
   const alertRef = useRef<HTMLDivElement | null>(null)
 
   const slots = useMemo(() => {
-    return getSlotsForRange(service, dateFrom, dateTo, store.appointments, store.blocks)
-  }, [service, dateFrom, dateTo, store.appointments, store.blocks])
+    return getSlotsForRange(service, dateFrom, dateTo, store.appointments, store.blocks).filter(
+      (s) => s.dateVal >= todayStr,
+    )
+  }, [service, dateFrom, dateTo, todayStr, store.appointments, store.blocks])
 
   useEffect(() => {
     if (errorMsg && alertRef.current) {
@@ -907,6 +934,25 @@ function Register({
     if (!contact.trim()) errs.contact = 'Este campo es obligatorio'
     setErrors(errs)
     return Object.keys(errs).length === 0
+  }
+
+  const goToPrevWeek = () => {
+    if (weekOffset === 0) return
+    setWeekOffset((prev) => prev - 1)
+    setSelectedSlot(null)
+    setErrorMsg(null)
+  }
+
+  const goToNextWeek = () => {
+    setWeekOffset((prev) => prev + 1)
+    setSelectedSlot(null)
+    setErrorMsg(null)
+  }
+
+  const goToCurrentWeek = () => {
+    setWeekOffset(0)
+    setSelectedSlot(null)
+    setErrorMsg(null)
   }
 
   const handleSelectSlot = (s: SlotInfo) => {
@@ -1070,30 +1116,14 @@ function Register({
                 <option>{professionalNames[service]}</option>
               </select>
             </Field>
-            <Field label="Fecha desde">
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => {
-                  setDateFrom(e.target.value)
-                  if (e.target.value > dateTo) setDateTo(e.target.value)
-                  setSelectedSlot(null)
-                }}
-              />
-            </Field>
-            <Field label="Fecha hasta">
-              <input
-                type="date"
-                value={dateTo}
-                min={dateFrom}
-                onChange={(e) => {
-                  setDateTo(e.target.value)
-                  setSelectedSlot(null)
-                }}
-              />
-            </Field>
           </div>
-        </section>
+          <div className="date-navigation" style={{ marginTop: '16px' }}>
+          <Button variant="secondary" aria-label="Semana anterior" disabled={weekOffset === 0} onClick={goToPrevWeek}>‹</Button>
+          <Button variant="secondary">{week.label}</Button>
+          <Button variant="secondary" aria-label="Semana siguiente" onClick={goToNextWeek}>›</Button>
+          <Button variant="secondary" disabled={weekOffset === 0} onClick={goToCurrentWeek}>Semana actual</Button>
+        </div>
+      </section>
 
         <section className="card slots-section-p03">
           <h2>Seleccionar franja</h2>
@@ -1148,6 +1178,13 @@ function Register({
       </div>
     </>
   )
+}
+
+function formatISODate(d: Date): string {
+  const yyyy = d.getUTCFullYear()
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
 }
 
 function getMondayOfWeek(baseDateStr: string, weekOffset: number): Date {
