@@ -508,10 +508,14 @@ function Shell({
   children: ReactNode
 }) {
   const role = session.role
+  const [menuOpen, setMenuOpen] = useState(false)
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      {menuOpen && (
+        <button type="button" className="sidebar-backdrop" aria-label="Cerrar menú" onClick={() => setMenuOpen(false)} />
+      )}
+      <aside className={menuOpen ? 'sidebar open' : 'sidebar'}>
         <div className="brand">
           <span className="brand-mark"><span/></span>
           <span>MEDINEX</span>
@@ -522,7 +526,7 @@ function Shell({
             <button
               key={item.id}
               className={screen === item.id ? 'active' : ''}
-              onClick={() => setScreen(item.id)}
+              onClick={() => { setScreen(item.id); setMenuOpen(false) }}
             >
               <Icon name={item.icon}/>
               <span>{item.label}</span>
@@ -532,7 +536,15 @@ function Shell({
       </aside>
       <div className="app-main">
         <header className="topbar">
-          <div className="mobile-menu"><Icon name="menu"/></div>
+          <button
+            type="button"
+            className="mobile-menu"
+            aria-label={menuOpen ? 'Cerrar menú' : 'Abrir menú'}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((value) => !value)}
+          >
+            <Icon name={menuOpen ? 'close' : 'menu'}/>
+          </button>
           <div className="topbar-spacer"/>
           <div className="user-avatar">
             {session.name.split(' ').filter((_, i) => i < 2).map((n) => n[0]).join('')}

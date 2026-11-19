@@ -17,7 +17,7 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 1024px; min-height: 100vh; background: #f8fafc; font-size: 16px; }
+body { margin: 0; min-height: 100vh; background: #f8fafc; font-size: 16px; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
@@ -475,4 +475,70 @@ button[aria-disabled="true"] {
   background: var(--primary);
   border-radius: 999px;
   transition: width 0.3s ease;
+}
+
+/* ---- Vistas responsivas: tablet (640-1024 px) y teléfono (<640 px) ---- */
+/* El diseño de escritorio no cambia: estas reglas solo se activan por debajo de 1024 px. */
+@media (max-width: 1024px) {
+  /* La barra lateral se convierte en menú desplegable desde la barra superior. */
+  .app-main { width: 100%; margin-left: 0; }
+  .sidebar { transform: translateX(-105%); transition: transform .25s ease; }
+  .sidebar.open { transform: translateX(0); box-shadow: 0 12px 40px rgba(15,23,42,.35); }
+  .sidebar-backdrop { position: fixed; inset: 0; z-index: 4; border: 0; background: rgba(15,23,42,.45); }
+  .mobile-menu { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; color: #475569; border: 0; border-radius: 8px; background: transparent; }
+  .mobile-menu:hover { background: #f1f5f9; }
+  .topbar { padding: 0 16px; gap: 8px; }
+  .content { padding: 24px 20px 48px; }
+  /* Inicio de sesión: se oculta el panel decorativo y la marca aparece en el formulario. */
+  .login-page { grid-template-columns: 1fr; }
+  .login-panel { display: none; }
+  .mobile-brand { display: block; color: #0f2347; font-size: 21px; font-weight: 700; letter-spacing: .06em; text-align: center; }
+  /* Agenda semanal: desplazamiento horizontal en vez de comprimir los 5 días. */
+  .calendar-card { overflow-x: auto; }
+  .calendar-head, .calendar-body { min-width: 640px; }
+  /* El modal nunca supera el ancho de la pantalla. */
+  .modal { width: min(480px, calc(100vw - 32px)); }
+}
+
+@media (max-width: 639px) {
+  h1 { font-size: 24px; }
+  .content { padding: 20px 16px 44px; }
+  .topbar { height: 64px; }
+  .topbar .user-meta, .topbar .top-divider { display: none; }
+  .page-header { flex-wrap: wrap; gap: 12px; }
+  .page-header .btn { width: 100%; }
+  .filter-grid-p02, .form-grid { grid-template-columns: 1fr; }
+  .filter-actions .btn { width: 100%; }
+  .kpi-grid { grid-template-columns: 1fr; }
+  .role-selector { grid-template-columns: repeat(2, 1fr); }
+  .login-form-wrap { padding: 16px; }
+  .login-form { padding: 28px 20px; }
+  .list-toolbar, .table-toolbar { flex-wrap: wrap; gap: 12px; }
+  .search-field { width: 100%; }
+  .tabs { overflow-x: auto; max-width: 100%; }
+  .admin-tabs { overflow-x: auto; max-width: 100%; }
+  .admin-tabs button { flex-shrink: 0; }
+  .slot-card { flex-wrap: wrap; gap: 12px; }
+  .slot-card .btn { width: 100%; }
+  .appointment-row { flex-wrap: wrap; gap: 12px; }
+  .date-block { width: 56px; margin-right: 12px; padding-right: 12px; }
+  .date-block strong { font-size: 21px; }
+  .appt-actions { width: 100%; flex-wrap: wrap; }
+  .appt-actions .btn { flex: 1 1 auto; }
+  .date-navigation { flex-wrap: wrap; }
+  .date-navigation > .btn { flex: 1 1 auto; min-width: 44px; }
+  .filter-actions { flex-direction: column; align-items: stretch; gap: 12px; }
+  .filter-actions .date-navigation { margin-right: 0 !important; }
+  .legend { flex-wrap: wrap; }
+  .form-actions { flex-wrap: wrap; }
+  .form-actions .btn { flex: 1 1 auto; }
+  .modal-body { padding: 18px; }
+  .modal-actions { flex-wrap: wrap; }
+  .concept-footer { padding: 16px; }
+  .service-stats > div { grid-template-columns: 1fr 1fr; row-gap: 4px; }
+  .donut-wrap { flex-direction: column; gap: 20px; }
+  .bar-chart { padding: 20px 12px 0; }
+  .success-actions .btn { flex: 1 1 auto; }
+  .p03-action-row { justify-content: stretch; }
+  .p03-action-row .btn { width: 100%; }
 }
